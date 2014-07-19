@@ -1,0 +1,101 @@
+﻿<?xml version="1.0"?>
+<BlogEntries><BlogEntry>
+ <title>How Active Document Servers running in IE Protected Mode can save a file</title>
+  <tag>Active Document Server, ActiveX Document Server, ActiveDoc, Internet Explorer, IE, IEShowSaveFileDialog, IESaveFile</tag>
+  <dates>
+    <date>02/16/2013 12:26pm</date>
+    <date>02/24/2013 12:11am</date>
+  </dates>
+<Description>
+   <![CDATA[ 
+An Active Document Server that is running in IE protected mode does not have access to the entire hard disk, hence when a user tries to save a file, the operation either fails, throws exception, or in the worst case it gives the user the impression that she has successfully saved the file but the user is unable to find that file on her hard disk.
+IE has specific guidelines on how to save a file from a piece of code (in this case in C#) that is running in IE protected mode. 
+The two primary APIs are
+IEShowSaveFileDialog
+And 
+IESaveFile
+These are tricky as calling them in a regular process will return E_NOTIMPL error code in form of a negative integer
+. First we need the following P/Inovke Signaures in place.
+
+<pre class="prettyprint lang-cs">
+
+  [DllImport(IEFRAME_DLL, SetLastError = true, CharSet = CharSet.Unicode)]
+  public static extern int IESaveFile(IntPtr hState, string lpwstrSourceFile);
+
+  public const int OFN_DONTADDTORECENT = 0x02000000;
+  public const int OFN_ENABLESIZING = 0x00800000;
+  public const int OFN_FILEMUSTEXIST = 0x00001000;
+  public const int OFN_FORCESHOWHIDDEN = 0x10000000;
+  public const int OFN_HIDEREADONLY = 0x00000004;
+  public const int OFN_LONGNAMES = 0x00200000;
+  public const int OFN_NOCHANGEDIR = 0x00000008;
+  public const int OFN_NODEREFERENCELINKS = 0x00100000;
+  public const int OFN_NOLONGNAMES = 0x00040000;
+  public const int OFN_NONETWORKBUTTON = 0x00020000;
+  public const int OFN_NOREADONLYRETURN = 0x00008000;
+  public const int OFN_NOTESTFILECREATE = 0x00010000;
+  public const int OFN_OVERWRITEPROMPT = 0x00000002;
+  public const int OFN_PATHMUSTEXIST = 0x00000800;
+  public const int OFN_READONLY = 0x00000001;
+  public const int OFN_SHAREAWARE = 0x00004000;
+
+  [DllImport(IEFRAME_DLL, SetLastError = true, CharSet = CharSet.Unicode)]
+  public static extern int IEShowSaveFileDialog(
+      IntPtr hwnd
+      , string lpwstrInitialFileName
+      , string lpwstrInitialDir
+      , string lpwstrFilter
+      , string lpwstrDefExt
+      , int dwFilterIndex
+      , int dwFlags
+      , out StringBuilder lppwstrDestinationFilePath
+      , ref IntPtr phState);
+            
+</pre>
+
+Then we call the method with these sample parameters
+<pre class="prettyprint lang-cs">
+ string sFilter = "TXT files|*.txt|All files|*.*|";
+ string sFileExt = "txt";
+ StringBuilder sbDestinationPath = new StringBuilder();
+ IntPtr ipSubsequencyHandle = IntPtr.Zero;
+
+ int iSaveFlags =
+     IEFrame.OFN_ENABLESIZING
+     | IEFrame.OFN_PATHMUSTEXIST
+     | IEFrame.OFN_OVERWRITEPROMPT
+     | IEFrame.OFN_NOREADONLYRETURN;
+
+ string sFileName = "Default.TXT";
+ sFileName = “AlreadyDownloadedFile.txt”
+
+ // Show Save File Dialog
+ int iIEShowSaveFileDialogResult = IEFrame.IEShowSaveFileDialog(
+     Process.GetCurrentProcess().MainWindowHandle
+     , sFileName
+     , Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+     , sFilter
+     , sFileExt
+     , 1
+     , iSaveFlags
+     , out sbDestinationPath
+     , ref ipSubsequencyHandle);
+
+</pre>
+
+If the method returns S_OK (0, success) you can proceed with actually downloading the file (If it is not already downloaded), A low privilege IE has only access to certain folders to write to. One of them is the “Low” folder under %tmp% and another one is the "Internet Temporary Files" folder. After you download (save) your file you can call IESaveFile to move the file to its final destination. Please notice that IESaveFile actually moves the file (Some documentations indicate that it is a copy procedure; maybe that is IE dependent, I need to do more research on that) nonetheless if your file is already open, it will return an error message which means “file in use” so you need to make a copy of the file before actually calling IESaveFile
+<pre class="prettyprint lang-cs">
+
+ //Make a copy of the file if it is already in use
+ string copyFilePath = Path.GetTempFileName();
+ File.Copy(pDocument.FullFileName, copyFilePath, true);
+ 
+ // The handle is for one time use only!
+ int iIESaveFile = IEFrame.IESaveFile(ipSubsequencyHandle, copyFilePath);
+ if (iIESaveFile != 0) // Error happened?
+    IEFrame.IECancelSaveFile(ipSubsequencyHandle);
+
+ ipSubsequencyHandle = IntPtr.Zero; //Do not use this handle anymore
+</pre>
+
+]]></Description></BlogEntry></BlogEntries>
